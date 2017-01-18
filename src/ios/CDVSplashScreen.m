@@ -22,14 +22,19 @@
 #import <Cordova/CDVScreenOrientationDelegate.h>
 #import "CDVViewController+SplashScreen.h"
 
+#define kUserDefaults [NSUserDefaults standardUserDefaults]
+
 #define kSplashScreenDurationDefault 3000.0f
 #define kFadeDurationDefault 500.0f
 
+static NSString *const adImageName = @"adImageName";
+static NSString *const adUrl = @"adUrl";
 
 @implementation CDVSplashScreen
 
 - (void)pluginInitialize
 {
+     [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(checkLaunchImage)name:UIApplicationDidFinishLaunchingNotification object:nil];                                           ;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(pageDidLoad) name:CDVPageDidLoadNotification object:nil];
 
     [self setVisible:YES];
@@ -43,6 +48,126 @@
 - (void)hide:(CDVInvokedUrlCommand*)command
 {
     [self setVisible:NO andForce:YES];
+}
+-(void)checkLaunchImage{
+    NSDictionary *dic = [[[[NSBundle mainBundle] infoDictionary] objectForKey:@"NSAppTransportSecurity"] objectForKey:@"NSExceptionDomains"];
+    NSMutableString *serverUrlStr = [NSMutableString stringWithString:@"http://host1.tiegushi.com"] ;
+    for (NSString *key in dic.allKeys) {
+        if ([key isEqualToString:@"host2.tiegushi.com"]) {
+            serverUrlStr = [NSMutableString stringWithString:@"http://host2.tiegushi.com"] ;
+            break;
+        }
+    }
+    NSLog(@"serverurl:%@",serverUrlStr);
+    
+    NSString* imageName = [self getAdImageName:[self getCurrentOrientation] delegate:(id<CDVScreenOrientationDelegate>)self.viewController device:[self getCurrentDevice]];
+    //helpImgs/dr_01.jpg
+    
+    NSString *imageUrl = [NSString stringWithFormat:@"%@/resources/%@",serverUrlStr,imageName];
+    
+    [self downloadAdImageWithUrl:imageUrl imageName:imageName];
+    
+}
+/**
+ * 获取需要下载的图片名字
+ */
+- (NSString*)getAdImageName:(UIInterfaceOrientation)currentOrientation delegate:(id<CDVScreenOrientationDelegate>)orientationDelegate device:(CDV_iOSDevice)device
+{
+    // Use UILaunchImageFile if specified in plist.  Otherwise, use Default.
+    NSString* imageName = @"splash_theme";
+    
+    NSUInteger supportedOrientations = [orientationDelegate supportedInterfaceOrientations];
+    
+    // Checks to see if the developer has locked the orientation to use only one of Portrait or Landscape
+    BOOL supportsLandscape = (supportedOrientations & UIInterfaceOrientationMaskLandscape);
+    BOOL supportsPortrait = (supportedOrientations & UIInterfaceOrientationMaskPortrait || supportedOrientations & UIInterfaceOrientationMaskPortraitUpsideDown);
+    // this means there are no mixed orientations in there
+    BOOL isOrientationLocked = !(supportsPortrait && supportsLandscape);
+    
+    if (device.iPhone4) {
+        imageName = [imageName stringByAppendingString:@"_640_960"];
+    }
+    else if (device.iPhone5){
+        imageName = [imageName stringByAppendingString:@"_640_1136"];
+    }
+    else if (device.iPhone6)
+    {
+        imageName = [imageName stringByAppendingString:@"_750_1334"];
+    }
+    else if (device.iPhone6Plus)
+    {
+        imageName = [imageName stringByAppendingString:@"_1242_2208"];
+        
+    }
+    else if (device.iPad)
+    {
+        imageName = [imageName stringByAppendingString:@"_1536_2048"];
+    }
+    imageName = [imageName stringByAppendingString:@".png"];
+    
+    return imageName;
+}
+
+
+/**
+ *  判断文件是否存在
+ */
+- (BOOL)isFileExistWithFilePath:(NSString *)filePath
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    BOOL isDirectory = FALSE;
+    return [fileManager fileExistsAtPath:filePath isDirectory:&isDirectory];
+}
+/**
+ *  下载新图片
+ */
+- (void)downloadAdImageWithUrl:(NSString *)imageUrl imageName:(NSString *)imageName
+{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        
+        NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:imageUrl]];
+        UIImage *image = [UIImage imageWithData:data];
+        
+        NSString *filePath = [self getFilePathWithImageName:imageName]; // 保存文件的名称
+        
+        if ([UIImagePNGRepresentation(image) writeToFile:filePath atomically:YES]) {// 保存成功
+            NSLog(@"保存成功");
+            //[self deleteOldImage];// 保存成功后删除旧图片
+            [kUserDefaults setValue:imageName forKey:adImageName];
+            [kUserDefaults synchronize];
+        }else{
+            NSLog(@"保存失败");
+        }
+        
+    });
+}
+
+/**
+ *  删除旧图片
+ */
+- (void)deleteOldImage
+{
+    NSString *imageName = [kUserDefaults valueForKey:adImageName];
+    if (imageName) {
+        NSString *filePath = [self getFilePathWithImageName:imageName];
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        [fileManager removeItemAtPath:filePath error:nil];
+    }
+}
+/**
+ *  根据图片名拼接文件路径
+ */
+- (NSString *)getFilePathWithImageName:(NSString *)imageName
+{
+    if (imageName) {
+        
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask, YES);
+        NSString *filePath = [[paths objectAtIndex:0] stringByAppendingPathComponent:imageName];
+        
+        return filePath;
+    }
+    
+    return nil;
 }
 
 - (void)pageDidLoad
@@ -328,10 +453,20 @@
 - (void)updateImage
 {
     NSString* imageName = [self getImageName:[self getCurrentOrientation] delegate:(id<CDVScreenOrientationDelegate>)self.viewController device:[self getCurrentDevice]];
+    // 判断沙盒中是否存在主题图片，如果存在，直接显示主题图片，不存在则显示预设图片
+    NSString *filePath = [self getFilePathWithImageName:[kUserDefaults valueForKey:adImageName]];
+    
+    BOOL isExist = [self isFileExistWithFilePath:filePath];
 
     if (![imageName isEqualToString:_curImageName])
     {
-        UIImage* img = [UIImage imageNamed:imageName];
+        UIImage* img = nil;
+        if (isExist) {
+           img = [UIImage imageWithContentsOfFile:filePath];
+        }
+        else{
+           img = [UIImage imageNamed:imageName];
+        }
         _imageView.image = img;
         _curImageName = imageName;
     }
