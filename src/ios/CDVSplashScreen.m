@@ -103,7 +103,7 @@ static NSString *const adUrl = @"adUrl";
     {
         imageName = [imageName stringByAppendingString:@"_1536_2048"];
     }
-    imageName = [imageName stringByAppendingString:@".png"];
+    imageName = [imageName stringByAppendingString:@".jpg"];
     
     return imageName;
 }
