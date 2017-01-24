@@ -128,6 +128,10 @@ static NSString *const adUrl = @"adUrl";
         NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:imageUrl]];
         UIImage *image = [UIImage imageWithData:data];
         
+        //image 为nil时，说明不需要展示新的splashscreen,删除本地缓存的图片；
+        if (!image) {
+             [self deleteOldImage];
+        }
         NSString *filePath = [self getFilePathWithImageName:imageName]; // 保存文件的名称
         
         if ([UIImagePNGRepresentation(image) writeToFile:filePath atomically:YES]) {// 保存成功
@@ -150,8 +154,11 @@ static NSString *const adUrl = @"adUrl";
     NSString *imageName = [kUserDefaults valueForKey:adImageName];
     if (imageName) {
         NSString *filePath = [self getFilePathWithImageName:imageName];
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        [fileManager removeItemAtPath:filePath error:nil];
+        BOOL isExist = [self isFileExistWithFilePath:filePath];
+        if (isExist) {
+             NSFileManager *fileManager = [NSFileManager defaultManager];
+             [fileManager removeItemAtPath:filePath error:nil];
+        }
     }
 }
 /**
